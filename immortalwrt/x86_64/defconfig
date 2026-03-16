@@ -27,6 +27,7 @@ CONFIG_PACKAGE_luci-app-fileassistant=y
 CONFIG_PACKAGE_luci-app-commands=y
 
 # ===== File Management =====
+CONFIG_PACKAGE_luci-app-store=y
 CONFIG_PACKAGE_filebrowser=y
 CONFIG_PACKAGE_luci-app-filebrowser=y
 
