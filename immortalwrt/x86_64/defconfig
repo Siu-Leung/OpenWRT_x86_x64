@@ -184,4 +184,9 @@ CONFIG_PACKAGE_luci-app-ttyd=y
 CONFIG_PACKAGE_ttyd=y
 # 安装 PPPoE 探测工具
 CONFIG_PACKAGE_pppoe-discovery=y
+# 开启 SQM 流量整形插件
+CONFIG_PACKAGE_luci-app-sqm=y
+CONFIG_PACKAGE_sqm-scripts=y
+# 推荐加上 cake 调度器（目前公认最强）
+CONFIG_PACKAGE_kmod-sched-cake=y
 
