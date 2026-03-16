@@ -20,52 +20,33 @@ jobs:
     runs-on: self-hosted
 
     steps:
-    - name: Maximize build space
-      uses: easimon/maximize-build-space@master
-      with:
-        root-reserve-mb: 512
-        swap-size-mb: 1024
-        remove-dotnet: 'true'
-        remove-android: 'true'
-        remove-haskell: 'true'
-        remove-codeql: 'true'
-        
     - name: Check out the project branch
       uses: actions/checkout@main
       with:
           fetch-depth: 0
-          
+
     - name: Clean build caches
       run: |
-        echo "Cleaning previous build artifacts and caches..."
-        sudo rm -rf $GITHUB_WORKSPACE/openwrt || true
-        sudo rm -rf $RUNNER_TEMP/* || true
-        sudo rm -rf $RUNNER_TOOL_CACHE/* || true
-        sudo apt-get -qq clean || true
-        sudo rm -rf /var/lib/apt/lists/* || true
-        rm -rf ~/.cache/* || true
-        echo "Cache cleanup complete."
+        echo "清理旧的编译产物..."
+        # 仅删除当前目录下的 openwrt 防止干扰其他任务
+        sudo rm -rf openwrt || true
+        echo "缓存清理完成。"
 
     - name: Initialize the compilation environment
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        ( sudo -E apt-get -qq update
-        sudo -E apt-get -qq install build-essential clang flex g++ gawk gcc-multilib gettext \
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install -y build-essential clang flex g++ gawk gcc-multilib gettext \
         git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev swig libpython3-dev aria2 jq subversion qemu-utils ccache rename libelf-dev
-        sudo -E apt-get -qq purge azure-cli ghc* zulu* hhvm llvm* firefox powershell openjdk* dotnet* google* mysql* php* android* rename speedtest-cli
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        sudo -E apt-get -qq autoremove --purge
-        sudo -E apt-get -qq clean ) &
         sudo timedatectl set-timezone "$TZ"
-        
+
     - name: Initialize Environment and Display System Info
-      env:
-        DEBIAN_FRONTEND: noninteractive
       run: |
-        chmod +x $OPENWRT_NAME/*.sh
-        $GITHUB_WORKSPACE/$OPENWRT_NAME/system-Information.sh
-        
+        chmod +x $OPENWRT_NAME/*.sh || true
+        # 如果脚本存在则执行，不存在则跳过
+        [ -f "$GITHUB_WORKSPACE/$OPENWRT_NAME/system-Information.sh" ] && $GITHUB_WORKSPACE/$OPENWRT_NAME/system-Information.sh || echo "System Info Script Not Found"
+
     - name: Download firmware source code
       run: |
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
@@ -75,26 +56,27 @@ jobs:
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-        
+
     - name: Load feeds.conf.default
       run: |
-        chmod +x $OPENWRT_NAME/*.sh
+        chmod +x $OPENWRT_NAME/*.sh || true
         cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+        [ -f "$GITHUB_WORKSPACE/$DIY_P1_SH" ] && $GITHUB_WORKSPACE/$DIY_P1_SH || echo "DIY P1 Script Not Found"
 
     - name: Load config
       run: |
         [ -e "$CONFIG_FILE" ] && cat "$CONFIG_FILE" > openwrt/.config
-        chmod +x $OPENWRT_NAME/*.sh && cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        chmod +x $OPENWRT_NAME/*.sh || true
+        cd openwrt
+        [ -f "$GITHUB_WORKSPACE/$DIY_P2_SH" ] && $GITHUB_WORKSPACE/$DIY_P2_SH || echo "DIY P2 Script Not Found"
 
     - name: Download the installation package
       id: package
       run: |
         cd openwrt
         make defconfig
-        cat .config
-        make download -j$(nproc)
+        # 针对 16 核机器全速下载
+        make download -j16
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
              
@@ -102,18 +84,21 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo -e "正在使用 16 线程全力编译..."
+        # 核心编译逻辑
+        make -j16 || make -j1 V=s
         echo "date1=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
-        echo "date2=$(date "+%Y年%m月%d日")" >> $GITHUB_ENV
+        echo "date2=$(date '+%Y.%m.%d-%H%M')" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Organize and Rename Files
       id: organize
-      if: ${{ env.UPLOAD_FIRMWARE == 'true' && !cancelled() }}
+      if: steps.compile.outputs.status == 'success' && !cancelled()
       run: |
+        # 进入固件生成目录（x86/64 路径通常固定）
         cd openwrt/bin/targets/x86/64
-        rm -rf packages *rootfs.tar.gz *rootfs.img.gz *combined.img.gz *.bin *.config *.buildinfo *.json sha256sums *.manifest
+        # 删除不必要的构建辅助文件，只保留最终镜像
+        rm -rf packages *.buildinfo *.manifest *.json sha256sums || true
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
         
@@ -126,20 +111,22 @@ jobs:
 
     - name: Generate release tags
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success' && !cancelled()
       run: |
-        echo "release_tag=${{ env.date2 }}" >> $GITHUB_OUTPUT
-        touch release.txt
-        echo "📥 固件下载" >> release.txt
+        # 即使编译中途环境变量丢失，也能生成一个保底 Tag
+        D2="${{ env.date2 }}"
+        [ -z "$D2" ] && D2=$(date +'%Y.%m.%d-%H%M')
+        echo "release_tag=$D2" >> $GITHUB_OUTPUT
+        echo "📥 固件已于 $(date) 编译完成" > release.txt
         echo "status=success" >> $GITHUB_OUTPUT
         
     - name: Publish to release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         files: ${{ env.FIRMWARE }}/*
-        name: ${{ env.date3 }}
+        name: ${{ env.OPENWRT_NAME }}_${{ env.OPENWRT_NAME1 }}_${{ env.date1 }}
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
