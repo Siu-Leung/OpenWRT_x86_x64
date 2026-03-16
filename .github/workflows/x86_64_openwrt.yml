@@ -28,7 +28,6 @@ jobs:
     - name: Clean build caches
       run: |
         echo "清理旧的编译产物..."
-        # 仅删除当前目录下的 openwrt 防止干扰其他任务
         sudo rm -rf openwrt || true
         echo "缓存清理完成。"
 
@@ -37,14 +36,14 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo -E apt-get -qq update
+        # 注意：此处已将 python3-distutils 替换为 python3-setuptools 以兼容 Ubuntu 24.04
         sudo -E apt-get -qq install -y build-essential clang flex g++ gawk gcc-multilib gettext \
-        git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev swig libpython3-dev aria2 jq subversion qemu-utils ccache rename libelf-dev
+        git libncurses5-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev swig libpython3-dev aria2 jq subversion qemu-utils ccache rename libelf-dev
         sudo timedatectl set-timezone "$TZ"
 
     - name: Initialize Environment and Display System Info
       run: |
         chmod +x $OPENWRT_NAME/*.sh || true
-        # 如果脚本存在则执行，不存在则跳过
         [ -f "$GITHUB_WORKSPACE/$OPENWRT_NAME/system-Information.sh" ] && $GITHUB_WORKSPACE/$OPENWRT_NAME/system-Information.sh || echo "System Info Script Not Found"
 
     - name: Download firmware source code
@@ -85,7 +84,6 @@ jobs:
       run: |
         cd openwrt
         echo -e "正在使用 16 线程全力编译..."
-        # 核心编译逻辑
         make -j16 || make -j1 V=s
         echo "date1=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
         echo "date2=$(date '+%Y.%m.%d-%H%M')" >> $GITHUB_ENV
@@ -95,9 +93,7 @@ jobs:
       id: organize
       if: steps.compile.outputs.status == 'success' && !cancelled()
       run: |
-        # 进入固件生成目录（x86/64 路径通常固定）
         cd openwrt/bin/targets/x86/64
-        # 删除不必要的构建辅助文件，只保留最终镜像
         rm -rf packages *.buildinfo *.manifest *.json sha256sums || true
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
@@ -113,7 +109,6 @@ jobs:
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success' && !cancelled()
       run: |
-        # 即使编译中途环境变量丢失，也能生成一个保底 Tag
         D2="${{ env.date2 }}"
         [ -z "$D2" ] && D2=$(date +'%Y.%m.%d-%H%M')
         echo "release_tag=$D2" >> $GITHUB_OUTPUT
