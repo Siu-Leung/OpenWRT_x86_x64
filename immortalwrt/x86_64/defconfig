@@ -188,3 +188,11 @@ CONFIG_PACKAGE_iperf3=y
 CONFIG_PACKAGE_luci-app-statistics=y
 CONFIG_PACKAGE_collectd-mod-interface=y
 CONFIG_PACKAGE_collectd-mod-cpu=y
+# 1. 自动平衡网卡中断 (多核 CPU 跑万兆网卡的救命草)
+CONFIG_PACKAGE_irqbalance=y
+
+# 2. 硬件加速页面 (用于在网页上开启硬件卸载)
+CONFIG_PACKAGE_luci-app-turboacc=y
+
+# 3. 实时网速显示 (比统计图更直观的仪表盘)
+CONFIG_PACKAGE_luci-app-netspeedtest=y
