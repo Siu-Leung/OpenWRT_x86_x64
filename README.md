@@ -6,3 +6,4 @@ main/immortalwrt
 原仓库https://github.com/DHDAXCW/OpenWRT_x86_x64
 
 感谢楼上仓库的作者 也感谢楼上仓库作者感谢的作者
+固件还没有稳定，别用
